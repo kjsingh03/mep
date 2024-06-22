@@ -1,0 +1,93 @@
+* {
+  margin: 0%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: black;
+}
+
+.btn {
+  background-color: #CAE0A2;
+  /* width: max-content; */
+  text-align: center;
+  border-radius: 0.5rem;
+  padding: 0.25rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 3px solid transparent;
+  font-size:14px;
+}
+
+.btn.active {
+  border: 3px solid #0000EE;
+  background-color: #c1d69a;
+}
+
+.btn:active {
+  border: 3px solid #0000EE;
+}
+
+.navbar {
+  transition: transform ease 0.3s;
+  transform: translateX(100%);
+}
+
+.navbar.active {
+  transform: translateX(0);
+}
+
+@media screen and (min-width:1024px) {
+  .btn:hover {
+    background-color: #c1d69a;
+  }
+
+  .navbar {
+    transform: translateX(0);
+  }
+
+  .navbar.active {
+    transform: translateX(0);
+  }
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  right: 0%;
+  z-index: 500;
+  background-color: transparent;
+  padding: 1rem 0;
+}
+
+.dropdown:hover .dropdown-content {
+  display: flex;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 12px;
+  background-color: #2e2e2e;
+  border-radius: 20px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #10141F;
+  border-radius: 600px;
+  border: 2px solid #2f2f2f;
+  transition: background-color 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #1c2327;
+}
+
+.bet-history::-webkit-scrollbar {
+  display: none;
+}
