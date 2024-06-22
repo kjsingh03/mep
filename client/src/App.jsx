@@ -77,6 +77,7 @@ const App = () => {
   const alertMessage = useSelector((state) => state.alertMessage)
 
   const [isFlipping, setIsFlipping] = useState(false);
+  const [isDepositing, setIsDepositing] = useState(false);
   const [result, setResult] = useState(null);
   const [winCount, setWinCount] = useState(0);
   const [message, setMessage] = useState("");
@@ -151,8 +152,8 @@ const App = () => {
       dispatch(setAlertMessage({ message: 'Insufficient Balance', type: 'alert' }))
       setTimeout(() => dispatch(setAlertMessage({})), 1200);
     }
-    else if (!isFlipping && userBalance > betAmount) {
-
+    else if (!isFlipping && userBalance > betAmount && !isDepositing) {
+      setIsDepositing(true)
       try {
         const provider = new ethers.providers.Web3Provider(walletProvider);
         const signer = provider.getSigner();
@@ -175,43 +176,48 @@ const App = () => {
         dispatch(setUserBalance(userBalance - betAmount))
 
         setTimeout(() => {
-          // const newResult = Math.random() >= 0.5 ? 'heads' : 'tails';
-          // setResult(newResult);
+          const newResult = Math.random() >= 0.5 ? 'heads' : 'tails';
+          setResult(newResult);
 
-          // let betOutcomeMessage;
-          // if (choice === newResult) {
-          //   betOutcomeMessage = `You won ${betAmount} $MEP! It was ${newResult}.`;
-          //   setWinCount(winCount + 1);
-          //   dispatch(setUserBalance(userBalance + betAmount))
-          // } else {
-          //   betOutcomeMessage = `You lost ${betAmount} $MEP. It was ${newResult}.`;
-          //   setWinCount(0);
-          // }
+          let betOutcomeMessage;
+          if (choice === newResult) {
+            betOutcomeMessage = `You won ${betAmount} $MEP! It was ${newResult}.`;
+            setWinCount(winCount + 1);
+            dispatch(setUserBalance(userBalance + betAmount))
+          } else {
+            betOutcomeMessage = `You lost ${betAmount} $MEP. It was ${newResult}.`;
+            setWinCount(0);
+          }
 
-          // setMessage(betOutcomeMessage);
+          setMessage(betOutcomeMessage);
 
           axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
             walletAddress,
             betAmount,
             choice
           })
-            .then(res => console.log(res))
+            .then(res => {
+              console.log(res)
+              socketRef.current.emit("emitBet", {
+                player: username,
+                amount: betAmount,
+                result: choice === newResult ? 'Win' : 'Lost',
+                time: new Date().getTime(),
+                winCount: choice === newResult ? winCount + 1 : 0,
+              })
+            })
             .catch(err => console.log(err))
 
-          // socketRef.current.emit("emitBet", {
-          //   player: username,
-          //   amount: betAmount,
-          //   result: choice === newResult ? 'Win' : 'Lost',
-          //   time: new Date().getTime(),
-          //   winCount: choice === newResult ? winCount + 1 : 0,
-          // })
 
           setIsFlipping(false);
+          setIsDepositing(false)
+
         }, 6000);
 
       } catch (error) {
-        console.error('Error:', error);
-        alert('Transaction failed!');
+        setIsDepositing(false)
+        dispatch(setAlertMessage({ message: 'Transaction Failed', type: 'alert' }))
+        setTimeout(() => dispatch(setAlertMessage({})), 1200);
       }
 
     }
