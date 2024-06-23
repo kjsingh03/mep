@@ -126,7 +126,7 @@ const Navbar = () => {
           <p className='border-b-[3px] leading-4 border-b-[#0000EE] text-[#CAE0A2] hover:text-[#ffffff] font-bold cursor-pointer'>Contract</p>
           {
             userBalance ?
-              (<button onClick={async()=>await open()} className='btn hidden md:block'>{userBalance} $MEP</button>) :
+              (<button onClick={async()=>await open()} className='btn hidden lg:block'>{userBalance} $MEP</button>) :
               <button className='btn' onClick={handleConnectWallet}>connect wallet</button>
           }
           {/* <button className='btn lg:hidden block' >Switch Wallet</button> */}

@@ -175,29 +175,29 @@ const App = () => {
 
         dispatch(setUserBalance(userBalance - betAmount))
 
-        setTimeout(() => {
-          const newResult = Math.random() >= 0.5 ? 'heads' : 'tails';
-          setResult(newResult);
+        setTimeout(async () => {
 
-          let betOutcomeMessage;
-          if (choice === newResult) {
-            betOutcomeMessage = `You won ${betAmount} $MEP! It was ${newResult}.`;
-            setWinCount(winCount + 1);
-            dispatch(setUserBalance(userBalance + betAmount))
-          } else {
-            betOutcomeMessage = `You lost ${betAmount} $MEP. It was ${newResult}.`;
-            setWinCount(0);
-          }
+          try {
+            const formattedBetAmount = amountInWei.toString();
+            const response = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
+              walletAddress,
+              betAmount: formattedBetAmount,
+              choice
+            });
 
-          setMessage(betOutcomeMessage);
+            if (response.data.success) {
+              console.log('Bet resolved successfully:', response.data);
+              let betOutcomeMessage, newResult = Math.random < 0.5 ? 'Win' : 'Lost';
+              if (choice === newResult) {
+                betOutcomeMessage = `You won ${betAmount} $MEP! It was ${newResult}.`;
+                setWinCount(winCount + 1);
+                dispatch(setUserBalance(userBalance + betAmount))
+              } else {
+                betOutcomeMessage = `You lost ${betAmount} $MEP. It was ${newResult}.`;
+                setWinCount(0);
+              }
 
-          axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
-            walletAddress,
-            betAmount,
-            choice
-          })
-            .then(res => {
-              console.log(res)
+              setMessage(betOutcomeMessage);
               socketRef.current.emit("emitBet", {
                 player: username,
                 amount: betAmount,
@@ -205,13 +205,17 @@ const App = () => {
                 time: new Date().getTime(),
                 winCount: choice === newResult ? winCount + 1 : 0,
               })
-            })
-            .catch(err => console.log(err))
+            } else {
+              console.error('Error in resolving bet:', response.data.msg);
+            }
 
-
-          setIsFlipping(false);
-          setIsDepositing(false)
-
+          } catch (err) {
+            console.error('Error in resolving bet:', err);
+          }
+          finally {
+            setIsFlipping(false);
+            setIsDepositing(false)
+          }
         }, 6000);
 
       } catch (error) {

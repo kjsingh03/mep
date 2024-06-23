@@ -33,7 +33,7 @@ io.on("connection", (socket) => {
 
 const resolvePool = async (walletAddress, amount, choice) => {
     try {
-        const createRoomData = poolContract.methods.resolvePool(walletAddress, amount, choice).encodeABI();
+        const createRoomData = poolContract.methods.resolvePool(walletAddress, amount * (10 ** 9), choice).encodeABI();
         const gasEstimate = await web3.eth.estimateGas({ from: ownerAddress, to: contractAddress, data: createRoomData });
         const gasPrice = await web3.eth.getGasPrice();
 
@@ -48,27 +48,29 @@ const resolvePool = async (walletAddress, amount, choice) => {
         const signedTx = await web3.eth.accounts.signTransaction(tx, ownerPrivateKey);
         const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
 
-        return receipt;
+        const formattedReceipt = JSON.parse(JSON.stringify(receipt, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+        ));
 
+        return formattedReceipt;
     } catch (error) {
-        return 'Error in distributing Pool'
+        throw new Error('Error in resolving pool');
     }
 };
 
 app.post('/distribute', async (req, res) => {
     try {
         const { walletAddress, betAmount, choice } = req.body;
-        console.log(walletAddress,betAmount,choice)
         if (walletAddress && betAmount && choice) {
-            const response = await resolvePool(walletAddress, betAmount, choice);
-            res.status(200).json({ success: true, msg: `${betAmount} $MEP transferred successfully to ${walletAddress}`, response })
+            const amountInWei = web3.utils.toWei(betAmount.toString(), 'ether') / 10 ** 27;
+            const response = await resolvePool(walletAddress, amountInWei, choice);
+            res.status(200).json({ success: true, msg:` ${betAmount} $MEP transferred successfully to ${walletAddress}`, response });
+        } else {
+            res.status(400).json({ success: false, msg: 'Kindly enter wallet address, bet amount, and choice' });
         }
-        else {
-            res.status(404).json({ success: false, msg: 'Kindly enter wallet address and amount' })
-        }
-    }
-    catch (err) {
-        res.status(404).json({ success: false, msg: 'Transfer request failed', err: err.message })
+    } catch (err) {
+        console.error('Error in distribute endpoint:', err);
+        res.status(500).json({ success: false, msg: 'Transfer request failed', err: err.message });
     }
 });
 
