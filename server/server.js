@@ -5,6 +5,8 @@ const http = require('http');
 const cors = require('cors');
 const { Web3 } = require('web3');
 const PoolContractABI = require('./PoolContractABI.json');
+const EventEmitter = require('events');
+EventEmitter.defaultMaxListeners = 20; // or a higher number
 
 const web3 = new Web3(new Web3.providers.HttpProvider(process.env.INFURA_URL));
 const contractAddress = process.env.CONTRACT_ADDRESS;
@@ -27,13 +29,13 @@ app.use(cors())
 
 io.on("connection", (socket) => {
     socket.on("emitBet", (record) => {
-        io.emit("updateHistory", record)
-    })
-})
+        io.emit("updateHistory", record);
+    });
+});
 
 const resolvePool = async (walletAddress, amount, choice) => {
     try {
-        const createRoomData = poolContract.methods.resolvePool(walletAddress, amount, choice).encodeABI();
+        const createRoomData = poolContract.methods.resolvePool(walletAddress, parseInt(amount), choice).encodeABI();
         const gasEstimate = await web3.eth.estimateGas({ from: ownerAddress, to: contractAddress, data: createRoomData });
         const gasPrice = await web3.eth.getGasPrice();
 
@@ -52,15 +54,15 @@ const resolvePool = async (walletAddress, amount, choice) => {
             typeof value === 'bigint' ? value.toString() : value
         ));
 
-        return Buffer.from(formattedReceipt.logs[1].data.slice(-64).replace(/^0+/, ''), 'hex').toString('utf8');
+        return formattedReceipt;
     } catch (error) {
-        throw new Error('Error in resolving pool');
+        return 'Error in resolving pool';
     }
 };
 
 const refund = async (walletAddress, amount) => {
     try {
-        const createRoomData = poolContract.methods.refund(walletAddress, amount).encodeABI();
+        const createRoomData = poolContract.methods.refund(walletAddress, parseInt(amount)).encodeABI();
         const gasEstimate = await web3.eth.estimateGas({ from: ownerAddress, to: contractAddress, data: createRoomData });
         const gasPrice = await web3.eth.getGasPrice();
 
@@ -79,9 +81,9 @@ const refund = async (walletAddress, amount) => {
             typeof value === 'bigint' ? value.toString() : value
         ));
 
-        return `${amount} $MEP refunded to ${walletAddress}`;
+        return `Refund successful`;
     } catch (error) {
-        throw new Error('Error in refunding pool');
+        return 'Error in refunding pool';
     }
 };
 
@@ -109,8 +111,18 @@ app.post('/refund', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT
+const PORT = process.env.PORT;
 
 server.listen(PORT, () => {
     console.log(`server is running at http://localhost:${PORT}`);
+});
+
+poolContract.events.BetResolved({
+    fromBlock: 'latest'
+}, (error, event) => {
+    if (!error) {
+        const { user, amount, userChoice, result } = event.returnValues;
+        io.emit('betResolved', { user, amount, userChoice, result });
+        console.log('hi')
+    }
 });

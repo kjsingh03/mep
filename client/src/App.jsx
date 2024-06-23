@@ -78,7 +78,7 @@ const App = () => {
 
   const [isFlipping, setIsFlipping] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
-  const [deposited, setDeposited] = useState(false)
+  const [distributePool, setdistributePool] = useState(false)
   const [result, setResult] = useState(null);
   const [winCount, setWinCount] = useState(0);
   const [message, setMessage] = useState("");
@@ -86,12 +86,16 @@ const App = () => {
   const [choice, setChoice] = useState('');
   const [username, setUsername] = useState(sessionStorage.getItem('name') || '');
   const [showNameModal, setShowNameModal] = useState(false);
-  const socketRef = useRef(null);
-
   const [betHistory, setBetHistory] = useState([]);
+
+  const walletAddress = useSelector(state => state.walletAddress)
+
+  const socketRef = useRef(null);
 
   const videoRef = useRef(null);
   const loopCounterRef = useRef(0);
+
+  const { walletProvider } = useWeb3ModalProvider()
 
   useEffect(() => {
     if (!socketRef.current)
@@ -103,14 +107,67 @@ const App = () => {
       setBetHistory((prevHistory) => [newRecord, ...prevHistory?.slice(0, 9)]);
     }
 
+    const handleBetResolved = ({ user, amount, userChoice, betResult }) => {
+      const finalAmount = amount / (10 ** 9);
+      setResult(betResult);
+      if (betResult === 'won') {
+        if (userChoice == "heads") {
+          setMessage(`It was heads. You won ${finalAmount} $MEP!`);
+        } else {
+          setMessage(`It was tails. You won ${finalAmount} $MEP!`);
+        }
+        setWinCount((prevCount) => prevCount + 1);
+        dispatch(setUserBalance(userBalance + (amount / 10 ** 9)));
+      } else {
+        if (userChoice == "heads") {
+          setMessage(`It was heads. You lost ${finalAmount} $MEP!`);
+        } else {
+          setMessage(`It was tails. You lost ${finalAmount} $MEP!`);
+        }
+        setWinCount(0);
+      }
+      socketRef.current.emit("emitBet", {
+        player: username,
+        amount: ethers.utils.formatUnits(amount, 9),
+        result: betResult === 'won' ? 'Win' : 'Lost',
+        time: new Date().getTime(),
+        winCount: betResult === 'won' ? winCount + 1 : 0,
+      });
+    }
+
     socket.on("updateHistory", handleUpdateHistory)
+    socket.on('betResolved', handleBetResolved)
 
     return () => {
       socket.off("updateHistory", handleUpdateHistory)
+      socket.off('betResolved', handleBetResolved)
     }
 
   }, [])
 
+  useEffect(() => {
+
+    if (!walletProvider) {
+      console.error("walletProvider is not defined");
+      return;
+    }
+
+    const provider = new ethers.providers.Web3Provider(walletProvider);
+    const signer = provider.getSigner();
+    const poolContract = new ethers.Contract(poolContractAddress, poolAbi, signer);
+
+    const betResolvedHandler = (user, amount, userChoice, betResult) => {
+
+      console.log(user, amount, userChoice, betResult)
+
+    };
+
+    poolContract.on('BetResolved', betResolvedHandler);
+
+    return () => {
+      poolContract.off('BetResolved', betResolvedHandler);
+    };
+  }, [walletProvider]);
 
   const updateChoice = (e) => {
     document.querySelector('.bet.active')?.classList.remove('active');
@@ -123,8 +180,6 @@ const App = () => {
     setBetAmount(parseInt(e.target.innerText.split(' ')[0]));
     e.target.classList.add('active');
   };
-
-  const { walletProvider } = useWeb3ModalProvider()
 
   const placeBet = async () => {
     if (!userBalance) {
@@ -148,97 +203,73 @@ const App = () => {
         const provider = new ethers.providers.Web3Provider(walletProvider);
         const signer = provider.getSigner();
 
-        const walletAddress = await signer.getAddress();
-
         const poolContract = new ethers.Contract(poolContractAddress, poolAbi, signer);
         const mepToken = new ethers.Contract(mepTokenAddress, mepABI, signer);
 
-        const amountInWei = ethers.utils.parseEther(betAmount.toString()) / (10 ** 9);
-        const formattedBetAmount = amountInWei.toString();
-
-        const approveTx = await mepToken.approve(poolContractAddress, amountInWei);
+        const approveTx = await mepToken.approve(poolContractAddress, betAmount * 10 ** 9);
         await approveTx.wait();
 
-        const depositTx = await poolContract.deposit(amountInWei);
+        const depositTx = await poolContract.deposit(betAmount * 10 ** 9);
         await depositTx.wait();
 
-        setDeposited(true)
         setIsFlipping(true);
         dispatch(setUserBalance(userBalance - betAmount))
 
-        try {
-          const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
-            walletAddress,
-            betAmount: formattedBetAmount,
-            choice
-          });
-
-          if (res.data.success) {
-
-            let betOutcomeMessage = "";
-
-            if (res.data.response === 'won') {
-              betOutcomeMessage = `You won ${betAmount} $MEP!.`;
-              setWinCount(winCount + 1);
-              dispatch(setUserBalance(userBalance + betAmount))
-            } else {
-              betOutcomeMessage = `You lost ${betAmount} $MEP.`;
-              setWinCount(0);
-            }
-
-            setMessage(betOutcomeMessage);
-
-            socketRef.current.emit("emitBet", {
-              player: username,
-              amount: betAmount,
-              result: res.data.response === 'won' ? 'Win' : 'Lost',
-              time: new Date().getTime(),
-              winCount: res.data.response === 'won' ? winCount + 1 : 0,
-            })
-
-          } else {
-            const refundRes = await refund(walletAddress, amountInWei)
-          }
-        } catch (err) {
-          if (deposited) {
-            const refundRes = await refund(walletAddress, amountInWei)
-          }
-        }
-
-        setIsFlipping(false);
-        setIsDepositing(false)
-        setDeposited(false)
+        const response = await distribute(walletAddress, betAmount * 10 ** 9, choice)
 
       } catch (error) {
-        setIsDepositing(false)
-        setDeposited(false)
+
         dispatch(setAlertMessage({ message: 'Transaction Failed', type: 'alert' }))
         setTimeout(() => dispatch(setAlertMessage({})), 1200);
+
+      } finally {
+        setIsFlipping(false);
+        setIsDepositing(false)
       }
     }
   };
 
-  const refund = async ({ walletAddress, amountInWei }) => {
-    try{
+  const distribute = async (walletAddress, amount, choice) => {
+    try {
+      const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
+        walletAddress,
+        betAmount: amount,
+        choice
+      });
+
+      if (res.data.response === 'Error in resolving pool') {
+        await refund(walletAddress, amount);
+      }
+
+      return res.data;
+    } catch (err) {
+      await refund(walletAddress, amount);
+    }
+  };
+
+  const refund = async (walletAddress, refundAmount) => {
+    try {
       const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/refund`, {
         walletAddress,
-        betAmount: amountInWei
+        betAmount: refundAmount
       });
-  
-      let betOutcomeMessage = "";
-  
-      if (res.data.response) {
-        betOutcomeMessage = res.data.response;
-        dispatch(setUserBalance(userBalance + betAmount))
+
+      if (res.data.response === 'Refund successful') {
+        dispatch(setUserBalance(userBalance + refundAmount / 10 ** 9))
+        dispatch(setAlertMessage({ message: res.data.response, type: 'alert' }))
+        // setTimeout(() => dispatch(setAlertMessage({})), 2000);
       } else {
-        betOutcomeMessage = res.data.msg;
+        dispatch(setAlertMessage({ message: res.data.msg, type: 'alert' }))
+        // setTimeout(() => dispatch(setAlertMessage({})), 2000);
       }
-  
-      setMessage(betOutcomeMessage);
+
+      return res.data;
     }
-    catch(err){
+    catch (err) {
       dispatch(setAlertMessage({ message: 'Failed to refund', type: 'alert' }))
-        setTimeout(() => dispatch(setAlertMessage({})), 1200);
+      setTimeout(() => dispatch(setAlertMessage({})), 1200);
+
+      console.log(err)
     }
   }
 
@@ -270,7 +301,7 @@ const App = () => {
     return `${hours} hours ago`;
   };
 
-  useEffect(() => {        
+  useEffect(() => {
     if (isFlipping && videoRef.current) {
       videoRef.current.playbackRate = 1.0;
       videoRef.current.play();
@@ -285,10 +316,17 @@ const App = () => {
         }
       }
     }
-    else{
+    else {
       setIsFlipping(false);
     }
   }, [isFlipping]);
+
+  useEffect(() => {
+    let historyInterval = setInterval(() => {
+      setBetHistory([...betHistory])
+    }, 1000)
+    return () => clearInterval(historyInterval)
+  }, [betHistory])
 
   return (
     <>
@@ -321,17 +359,18 @@ const App = () => {
               }
               <h6 className="text-xl text-white">I LIKE</h6>
               <div className="flex gap-4 w-full justify-center">
-                <button className="btn bet w-full text-2xl" onClick={updateChoice}>Heads</button>
-                <button className="btn bet w-full text-2xl" onClick={updateChoice}>Tails</button>
+                <button className="btn bet w-full text-2xl" disabled={isDepositing} onClick={updateChoice}>Heads</button>
+                <button className="btn bet w-full text-2xl" disabled={isDepositing} onClick={updateChoice}>Tails</button>
               </div>
               <h6 className="text-xl text-white">FOR</h6>
               <div className="flex flex-col xs:flex-row gap-4 w-full justify-center">
-                <button className="btn bet-amount" onClick={updateBetAmount}>1000 $MEP</button>
-                <button className="btn bet-amount" onClick={updateBetAmount}>10000 $MEP</button>
-                <button className="btn bet-amount" onClick={updateBetAmount}>100000 $MEP</button>
+                <button className="btn bet-amount" disabled={isDepositing} onClick={updateBetAmount}>1000 $MEP</button>
+                <button className="btn bet-amount" disabled={isDepositing} onClick={updateBetAmount}>10000 $MEP</button>
+                <button className="btn bet-amount" disabled={isDepositing} onClick={updateBetAmount}>100000 $MEP</button>
               </div>
               <div className="border-t border-slate-300 pt-4 my-2 w-full flex justify-center">
                 <button className="btn" onClick={placeBet} disabled={isFlipping}>Double or nothing</button>
+                <button className="btn" onClick={async () => await refund(walletAddress, 100000 * 10 ** 9)} >Refund</button>
               </div>
               <div className="h-2">
                 {message && <h6 className="text-xl text-white">{message}</h6>}

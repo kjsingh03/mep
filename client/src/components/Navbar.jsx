@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { logo } from '../assets'
 import '../App.css'
-import { setUserBalance, setLoginState, setAlertMessage } from '../store/slice'
+import { setUserBalance, setLoginState, setAlertMessage, setWalletAddress } from '../store/slice'
 import { useDispatch, useSelector } from 'react-redux'
 import { useWeb3Modal, useWeb3ModalAccount, useWeb3ModalProvider } from '@web3modal/ethers5/react'
 import { ethers } from 'ethers'
@@ -22,7 +22,6 @@ const Navbar = () => {
     setWalletConnected(!!provider)
   }, [provider])
 
-
   const connectWallet = async () => {
     if (typeof window.ethereum !== 'undefined') {
       try {
@@ -30,6 +29,8 @@ const Navbar = () => {
         if (isConnected) {
           const ethersProvider = new ethers.providers.Web3Provider(walletProvider)
           const signer = ethersProvider.getSigner()
+          const walletAddress = await signer.getAddress();
+          dispatch(setWalletAddress(walletAddress))
           const contract = new ethers.Contract(mepTokenAddress, mepABI, signer)
           const balance = await contract.balanceOf(address)
           const decimals = await contract.decimals()
