@@ -78,6 +78,7 @@ const App = () => {
 
   const [isFlipping, setIsFlipping] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
+  const [deposited, setDeposited] = useState(false)
   const [result, setResult] = useState(null);
   const [winCount, setWinCount] = useState(0);
   const [message, setMessage] = useState("");
@@ -87,18 +88,7 @@ const App = () => {
   const [showNameModal, setShowNameModal] = useState(false);
   const socketRef = useRef(null);
 
-  const [betHistory, setBetHistory] = useState([
-    { player: 'Player X', amount: 1000, result: 'Win', time: new Date().getTime() - 2000, winCount: 7 },
-    { player: 'Player X', amount: 1000, result: 'Lost', time: new Date().getTime() - 4000, winCount: 0 },
-    { player: 'Player Y', amount: 100000, result: 'Lost', time: new Date().getTime() - 7000, winCount: 0 },
-    { player: 'Player Z', amount: 10000, result: 'Lost', time: new Date().getTime() - 8000, winCount: 0 },
-    { player: 'Player Y', amount: 1000, result: 'Win', time: new Date().getTime() - 10000, winCount: 2 },
-    { player: 'Player X', amount: 1000, result: 'Win', time: new Date().getTime() - 13000, winCount: 0 },
-    { player: 'Player Z', amount: 1000, result: 'Win', time: new Date().getTime() - 9000, winCount: 0 },
-    { player: 'Player Y', amount: 10000, result: 'Win', time: new Date().getTime() - 14000, winCount: 4 },
-    { player: 'Player Z', amount: 1000, result: 'Win', time: new Date().getTime() - 16000, winCount: 0 },
-    { player: 'Player X', amount: 100000, result: 'Win', time: new Date().getTime() - 20000, winCount: 2 },
-  ]);
+  const [betHistory, setBetHistory] = useState([]);
 
   const videoRef = useRef(null);
   const loopCounterRef = useRef(0);
@@ -110,7 +100,7 @@ const App = () => {
     const socket = socketRef.current;
 
     const handleUpdateHistory = (newRecord) => {
-      setBetHistory((prevHistory) => [newRecord, ...prevHistory.slice(0, 9)]);
+      setBetHistory((prevHistory) => [newRecord, ...prevHistory?.slice(0, 9)]);
     }
 
     socket.on("updateHistory", handleUpdateHistory)
@@ -164,6 +154,7 @@ const App = () => {
         const mepToken = new ethers.Contract(mepTokenAddress, mepABI, signer);
 
         const amountInWei = ethers.utils.parseEther(betAmount.toString()) / (10 ** 9);
+        const formattedBetAmount = amountInWei.toString();
 
         const approveTx = await mepToken.approve(poolContractAddress, amountInWei);
         await approveTx.wait();
@@ -171,61 +162,85 @@ const App = () => {
         const depositTx = await poolContract.deposit(amountInWei);
         await depositTx.wait();
 
+        setDeposited(true)
         setIsFlipping(true);
-
         dispatch(setUserBalance(userBalance - betAmount))
 
-        setTimeout(async () => {
+        try {
+          const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
+            walletAddress,
+            betAmount: formattedBetAmount,
+            choice
+          });
 
-          try {
-            const formattedBetAmount = amountInWei.toString();
-            const response = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
-              walletAddress,
-              betAmount: formattedBetAmount,
-              choice
-            });
+          if (res.data.success) {
 
-            if (response.data.success) {
-              console.log('Bet resolved successfully:', response.data);
-              let betOutcomeMessage, newResult = Math.random < 0.5 ? 'Win' : 'Lost';
-              if (choice === newResult) {
-                betOutcomeMessage = `You won ${betAmount} $MEP! It was ${newResult}.`;
-                setWinCount(winCount + 1);
-                dispatch(setUserBalance(userBalance + betAmount))
-              } else {
-                betOutcomeMessage = `You lost ${betAmount} $MEP. It was ${newResult}.`;
-                setWinCount(0);
-              }
+            let betOutcomeMessage = "";
 
-              setMessage(betOutcomeMessage);
-              socketRef.current.emit("emitBet", {
-                player: username,
-                amount: betAmount,
-                result: choice === newResult ? 'Win' : 'Lost',
-                time: new Date().getTime(),
-                winCount: choice === newResult ? winCount + 1 : 0,
-              })
+            if (res.data.response === 'won') {
+              betOutcomeMessage = `You won ${betAmount} $MEP!.`;
+              setWinCount(winCount + 1);
+              dispatch(setUserBalance(userBalance + betAmount))
             } else {
-              console.error('Error in resolving bet:', response.data.msg);
+              betOutcomeMessage = `You lost ${betAmount} $MEP.`;
+              setWinCount(0);
             }
 
-          } catch (err) {
-            console.error('Error in resolving bet:', err);
+            setMessage(betOutcomeMessage);
+
+            socketRef.current.emit("emitBet", {
+              player: username,
+              amount: betAmount,
+              result: res.data.response === 'won' ? 'Win' : 'Lost',
+              time: new Date().getTime(),
+              winCount: res.data.response === 'won' ? winCount + 1 : 0,
+            })
+
+          } else {
+            const refundRes = await refund(walletAddress, amountInWei)
           }
-          finally {
-            setIsFlipping(false);
-            setIsDepositing(false)
+        } catch (err) {
+          if (deposited) {
+            const refundRes = await refund(walletAddress, amountInWei)
           }
-        }, 6000);
+        }
+
+        setIsFlipping(false);
+        setIsDepositing(false)
+        setDeposited(false)
 
       } catch (error) {
         setIsDepositing(false)
+        setDeposited(false)
         dispatch(setAlertMessage({ message: 'Transaction Failed', type: 'alert' }))
         setTimeout(() => dispatch(setAlertMessage({})), 1200);
       }
-
     }
   };
+
+  const refund = async ({ walletAddress, amountInWei }) => {
+    try{
+      const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/refund`, {
+        walletAddress,
+        betAmount: amountInWei
+      });
+  
+      let betOutcomeMessage = "";
+  
+      if (res.data.response) {
+        betOutcomeMessage = res.data.response;
+        dispatch(setUserBalance(userBalance + betAmount))
+      } else {
+        betOutcomeMessage = res.data.msg;
+      }
+  
+      setMessage(betOutcomeMessage);
+    }
+    catch(err){
+      dispatch(setAlertMessage({ message: 'Failed to refund', type: 'alert' }))
+        setTimeout(() => dispatch(setAlertMessage({})), 1200);
+    }
+  }
 
   const handleNameSubmit = (e) => {
     e.preventDefault();
@@ -255,7 +270,7 @@ const App = () => {
     return `${hours} hours ago`;
   };
 
-  useEffect(() => {
+  useEffect(() => {        
     if (isFlipping && videoRef.current) {
       videoRef.current.playbackRate = 1.0;
       videoRef.current.play();
@@ -269,6 +284,9 @@ const App = () => {
           setIsFlipping(false);
         }
       }
+    }
+    else{
+      setIsFlipping(false);
     }
   }, [isFlipping]);
 
@@ -331,17 +349,23 @@ const App = () => {
             </div>
           </div>
 
-          <div className="w-full max-w-2xl text-center text-white mx-auto h-[30rem]">
-            <h2 className="text-2xl mb-4">Bet History</h2>
-            <div className="bet-history flex flex-col gap-0 md:items-center whitespace-nowrap overflow-x-auto w-full scroll">
-              {betHistory.map((record, index) => (
-                <div className="border-t w-[35rem] sm:w-full border-slate-400 px-4 py-2 flex items-center justify-between" key={index}>
-                  <p>{record.player} plays bet for {record.amount} $MEP and {record.result === 'Win' ? 'doubled' : 'got rugged'} {record.winCount > 1 && record.result === 'Win' ? `${record.winCount} times` : ''}</p>
-                  <p>{getTimeDifference(record.time)}</p>
-                </div>
-              ))}
+          {
+            betHistory.length > 0 &&
+            <div className="w-full max-w-2xl text-center text-white mx-auto h-[30rem]">
+              <h2 className="text-2xl mb-4">Bet History</h2>
+              <div className="bet-history flex flex-col gap-0 md:items-center whitespace-nowrap overflow-x-auto w-full scroll">
+                {
+                  betHistory.map((record, index) => (
+                    <div className="border-t w-[35rem] sm:w-full border-slate-400 px-4 py-2 flex items-center justify-between" key={index}>
+                      <p>{record.player} plays bet for {record.amount} $MEP and {record.result === 'Win' ? 'doubled' : 'got rugged'} {record.winCount > 1 && record.result === 'Win' ? `${record.winCount} times` : ''}</p>
+                      <p>{getTimeDifference(record.time)}</p>
+                    </div>
+                  ))
+                }
+              </div>
+
             </div>
-          </div>
+          }
         </div>
         <Footer />
       </div>

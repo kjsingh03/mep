@@ -33,7 +33,7 @@ io.on("connection", (socket) => {
 
 const resolvePool = async (walletAddress, amount, choice) => {
     try {
-        const createRoomData = poolContract.methods.resolvePool(walletAddress, amount * (10 ** 9), choice).encodeABI();
+        const createRoomData = poolContract.methods.resolvePool(walletAddress, amount, choice).encodeABI();
         const gasEstimate = await web3.eth.estimateGas({ from: ownerAddress, to: contractAddress, data: createRoomData });
         const gasPrice = await web3.eth.getGasPrice();
 
@@ -52,25 +52,60 @@ const resolvePool = async (walletAddress, amount, choice) => {
             typeof value === 'bigint' ? value.toString() : value
         ));
 
-        return formattedReceipt;
+        return Buffer.from(formattedReceipt.logs[1].data.slice(-64).replace(/^0+/, ''), 'hex').toString('utf8');
     } catch (error) {
         throw new Error('Error in resolving pool');
+    }
+};
+
+const refund = async (walletAddress, amount) => {
+    try {
+        const createRoomData = poolContract.methods.refund(walletAddress, amount).encodeABI();
+        const gasEstimate = await web3.eth.estimateGas({ from: ownerAddress, to: contractAddress, data: createRoomData });
+        const gasPrice = await web3.eth.getGasPrice();
+
+        const tx = {
+            from: ownerAddress,
+            to: contractAddress,
+            gas: gasEstimate,
+            gasPrice: gasPrice,
+            data: createRoomData,
+        };
+
+        const signedTx = await web3.eth.accounts.signTransaction(tx, ownerPrivateKey);
+        const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
+
+        const formattedReceipt = JSON.parse(JSON.stringify(receipt, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+        ));
+
+        return `${amount} $MEP refunded to ${walletAddress}`;
+    } catch (error) {
+        throw new Error('Error in refunding pool');
     }
 };
 
 app.post('/distribute', async (req, res) => {
     try {
         const { walletAddress, betAmount, choice } = req.body;
-        if (walletAddress && betAmount && choice) {
-            const amountInWei = web3.utils.toWei(betAmount.toString(), 'ether') / 10 ** 27;
-            const response = await resolvePool(walletAddress, amountInWei, choice);
-            res.status(200).json({ success: true, msg:` ${betAmount} $MEP transferred successfully to ${walletAddress}`, response });
-        } else {
-            res.status(400).json({ success: false, msg: 'Kindly enter wallet address, bet amount, and choice' });
-        }
+
+        const response = await resolvePool(walletAddress, betAmount, choice);
+        res.status(200).json({ success: true, response });
+
     } catch (err) {
-        console.error('Error in distribute endpoint:', err);
         res.status(500).json({ success: false, msg: 'Transfer request failed', err: err.message });
+    }
+});
+
+app.post('/refund', async (req, res) => {
+    try {
+        const { walletAddress, betAmount } = req.body;
+
+        const response = await refund(walletAddress, betAmount);
+        res.status(200).json({ success: true, response });
+
+    } catch (err) {
+        res.status(500).json({ success: false, msg: 'Refund request failed', err: err.message });
     }
 });
 
