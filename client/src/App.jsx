@@ -107,67 +107,13 @@ const App = () => {
       setBetHistory((prevHistory) => [newRecord, ...prevHistory?.slice(0, 9)]);
     }
 
-    const handleBetResolved = ({ user, amount, userChoice, betResult }) => {
-      const finalAmount = amount / (10 ** 9);
-      setResult(betResult);
-      if (betResult === 'won') {
-        if (userChoice == "heads") {
-          setMessage(`It was heads. You won ${finalAmount} $MEP!`);
-        } else {
-          setMessage(`It was tails. You won ${finalAmount} $MEP!`);
-        }
-        setWinCount((prevCount) => prevCount + 1);
-        dispatch(setUserBalance(userBalance + (amount / 10 ** 9)));
-      } else {
-        if (userChoice == "heads") {
-          setMessage(`It was heads. You lost ${finalAmount} $MEP!`);
-        } else {
-          setMessage(`It was tails. You lost ${finalAmount} $MEP!`);
-        }
-        setWinCount(0);
-      }
-      socketRef.current.emit("emitBet", {
-        player: username,
-        amount: ethers.utils.formatUnits(amount, 9),
-        result: betResult === 'won' ? 'Win' : 'Lost',
-        time: new Date().getTime(),
-        winCount: betResult === 'won' ? winCount + 1 : 0,
-      });
-    }
-
     socket.on("updateHistory", handleUpdateHistory)
-    socket.on('betResolved', handleBetResolved)
 
     return () => {
       socket.off("updateHistory", handleUpdateHistory)
-      socket.off('betResolved', handleBetResolved)
     }
 
   }, [])
-
-  useEffect(() => {
-
-    if (!walletProvider) {
-      console.error("walletProvider is not defined");
-      return;
-    }
-
-    const provider = new ethers.providers.Web3Provider(walletProvider);
-    const signer = provider.getSigner();
-    const poolContract = new ethers.Contract(poolContractAddress, poolAbi, signer);
-
-    const betResolvedHandler = (user, amount, userChoice, betResult) => {
-
-      console.log(user, amount, userChoice, betResult)
-
-    };
-
-    poolContract.on('BetResolved', betResolvedHandler);
-
-    return () => {
-      poolContract.off('BetResolved', betResolvedHandler);
-    };
-  }, [walletProvider]);
 
   const updateChoice = (e) => {
     document.querySelector('.bet.active')?.classList.remove('active');
@@ -229,6 +175,56 @@ const App = () => {
     }
   };
 
+  useEffect(() => {
+
+    if (!walletProvider) {
+      console.error("walletProvider is not defined");
+      return;
+    }
+
+    const provider = new ethers.providers.Web3Provider(walletProvider);
+    const signer = provider.getSigner();
+    const poolContract = new ethers.Contract(poolContractAddress, poolAbi, signer);
+
+    const betResolvedHandler = (user, amount, userChoice, betResult) => {
+      const finalAmount = amount / (10 ** 9);
+      setResult(betResult);
+      if (betResult === 'won') {
+        if (userChoice == "heads") {
+          setMessage(`It was heads. You won ${finalAmount} $MEP!`);
+        } else {
+          setMessage(`It was tails. You won ${finalAmount} $MEP!`);
+        }
+        setWinCount((prevCount) => prevCount + 1);
+        dispatch(setUserBalance(userBalance + (amount / 10 ** 9)));
+      } else {
+        if (userChoice == "heads") {
+          setMessage(`It was heads. You lost ${finalAmount} $MEP!`);
+        } else {
+          setMessage(`It was tails. You lost ${finalAmount} $MEP!`);
+        }
+        setWinCount(0);
+      }
+
+      if (username) {
+        socketRef.current.emit("emitBet", {
+          player: username,
+          amount: ethers.utils.formatUnits(amount, 9),
+          result: betResult === 'won' ? 'Win' : 'Lost',
+          time: new Date().getTime(),
+          winCount: betResult === 'won' ? winCount + 1 : 0,
+        });
+      }
+
+    };
+
+    poolContract.on('BetResolved', betResolvedHandler);
+
+    return () => {
+      poolContract.off('BetResolved', betResolvedHandler);
+    };
+  }, [distributePool]);
+
   const distribute = async (walletAddress, amount, choice) => {
     try {
       const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
@@ -239,6 +235,9 @@ const App = () => {
 
       if (res.data.response === 'Error in resolving pool') {
         await refund(walletAddress, amount);
+      }
+      else {
+        setdistributePool(true)
       }
 
       return res.data;
@@ -257,10 +256,10 @@ const App = () => {
       if (res.data.response === 'Refund successful') {
         dispatch(setUserBalance(userBalance + refundAmount / 10 ** 9))
         dispatch(setAlertMessage({ message: res.data.response, type: 'alert' }))
-        // setTimeout(() => dispatch(setAlertMessage({})), 2000);
+        setTimeout(() => dispatch(setAlertMessage({})), 2000);
       } else {
         dispatch(setAlertMessage({ message: res.data.msg, type: 'alert' }))
-        // setTimeout(() => dispatch(setAlertMessage({})), 2000);
+        setTimeout(() => dispatch(setAlertMessage({})), 2000);
       }
 
       return res.data;
