@@ -369,7 +369,6 @@ const App = () => {
               </div>
               <div className="border-t border-slate-300 pt-4 my-2 w-full flex justify-center">
                 <button className="btn" onClick={placeBet} disabled={isFlipping}>Double or nothing</button>
-                <button className="btn" onClick={async () => await refund(walletAddress, 100000 * 10 ** 9)} >Refund</button>
               </div>
               <div className="h-2">
                 {message && <h6 className="text-xl text-white">{message}</h6>}
