@@ -199,9 +199,9 @@ const App = () => {
         dispatch(setUserBalance(userBalance + (amount / 10 ** 9)));
       } else {
         if (userChoice == "heads") {
-          setMessage(`It was heads. You lost ${finalAmount} $MEP!`);
-        } else {
           setMessage(`It was tails. You lost ${finalAmount} $MEP!`);
+        } else {
+          setMessage(`It was heads. You lost ${finalAmount} $MEP!`);
         }
         setWinCount(0);
       }
