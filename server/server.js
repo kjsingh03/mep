@@ -56,6 +56,7 @@ const resolvePool = async (walletAddress, amount, choice) => {
 
         return formattedReceipt;
     } catch (error) {
+        console.log(error)
         return 'Error in resolving pool';
     }
 };

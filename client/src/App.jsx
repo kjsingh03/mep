@@ -225,6 +225,13 @@ const App = () => {
     };
   }, [distributePool]);
 
+  useEffect(()=>{
+    document.querySelector('.bet-screen').addEventListener('click', (e)=>{
+      if (!document.querySelector('.bet-modal').contains(e.target))
+        setMessage("")
+    })
+  },[setMessage])
+
   const distribute = async (walletAddress, amount, choice) => {
     try {
       const res = await axios.post(`${import.meta.env.VITE_SERVER_URL}/distribute`, {
@@ -371,7 +378,18 @@ const App = () => {
                 <button className="btn" onClick={placeBet} disabled={isFlipping}>Double or nothing</button>
               </div>
               <div className="h-2">
-                {message && <h6 className="text-xl text-white">{message}</h6>}
+               
+                  <div className={`bet-screen bg-[#00000067] ${message?'flex':'hidden'} justify-center items-center z-[49] w-screen h-screen fixed top-0 left-0`}>
+                    <div className="bet-modal relative border backdrop-blur-sm border-slate-400/25 w-[95%] sm:w-[30rem] h-96 rounded-lg flex flex-col items-center gap-4 justify-center">
+                      <div className={`coin ${isFlipping ? 'flipping' : ''}`}>
+                        <div className={`side heads-img ${result === 'heads' ? 'show' : ''}`}></div>
+                        <div className={`side tails-img ${result === 'tails' ? 'show' : ''}`}></div>
+                      </div>
+                      <div className="text-white text-3xl absolute top-0 right-4" onClick={()=>setMessage("")}>&times;</div>
+                      <h6 className="text-xl text-white">{message}</h6>
+                    </div>
+                  </div>
+                
               </div>
             </div>
           </div>
