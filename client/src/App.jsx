@@ -228,7 +228,7 @@ const App = () => {
   useEffect(()=>{
     document.querySelector('.bet-screen').addEventListener('click', (e)=>{
       if (!document.querySelector('.bet-modal').contains(e.target))
-        setMessage("");
+        setMessage("")
     })
   },[setMessage])
 
